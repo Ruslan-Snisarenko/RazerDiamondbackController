@@ -1,0 +1,8 @@
+# Temporary & backup files
+*.tmp
+*.log
+*.bak
+*.pdb
+*.obj
+.vs/
+.vscode/
