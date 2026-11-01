@@ -11,6 +11,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using System.Windows.Interop;
 
 namespace RazerDiamondbackController
 {
@@ -159,7 +160,11 @@ namespace RazerDiamondbackController
             "rzKNi+lAZ0+XBqbLzZ+iZUpD1v8pjtnCCtT9L8TtKtOc6SNIL/vN0uadFKkqGni96wmSpsHVjUgAkXdYs3wGIRHeS" +
             "XNiw1wAAAABJRU5ErkJggg==";
 
-        public MainWindow()
+        private uint wmShowMe = 0;
+
+        public MainWindow() : this(false) { }
+
+        public MainWindow(bool startInTray)
         {
             device = new RazerDevice();
 
@@ -176,13 +181,51 @@ namespace RazerDiamondbackController
             InitTray();
             LoadSettings();
 
-            this.Loaded += (s, e) =>
+            IntPtr handle = new WindowInteropHelper(this).EnsureHandle();
+            HwndSource source = HwndSource.FromHwnd(handle);
+            if (source != null)
             {
-                UpdateSliderVisuals(currentDpi);
-                UpdateBrightnessVisuals(currentBrightness);
-                UpdateSpectrumThumb(currentColor);
-                RefreshFromDevice();
+                source.AddHook(WndProc);
+            }
+            wmShowMe = Program.RegisterWindowMessage(Program.ShowWindowMessageName);
+
+            InitializeDeviceAndState();
+
+            this.Closing += (s, e) =>
+            {
+                if (chkMinimizeToTray != null && chkMinimizeToTray.IsChecked == true)
+                {
+                    e.Cancel = true;
+                    this.Hide();
+                    if (trayIcon != null)
+                    {
+                        trayIcon.ShowBalloonTip(1500, "Razer Diamondback", Loc.T("Приложение работает в трее", "App is running in tray", "Програма працює в треї"), System.Windows.Forms.ToolTipIcon.Info);
+                    }
+                }
+                else
+                {
+                    if (trayIcon != null) trayIcon.Visible = false;
+                    System.Windows.Application.Current.Shutdown();
+                }
             };
+        }
+
+        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (wmShowMe != 0 && (uint)msg == wmShowMe)
+            {
+                this.Dispatcher.Invoke((Action)(() => RestoreWindow()));
+                handled = true;
+            }
+            return IntPtr.Zero;
+        }
+
+        private void InitializeDeviceAndState()
+        {
+            UpdateSliderVisuals(currentDpi);
+            UpdateBrightnessVisuals(currentBrightness);
+            UpdateSpectrumThumb(currentColor);
+            RefreshFromDevice();
         }
 
         private static BitmapSource LoadTelegramIcon()
@@ -1823,6 +1866,9 @@ namespace RazerDiamondbackController
             this.Show();
             this.WindowState = WindowState.Normal;
             this.Activate();
+            this.Topmost = true;
+            this.Topmost = false;
+            this.Focus();
         }
 
         private void HandleCloseButton()
@@ -1908,7 +1954,7 @@ namespace RazerDiamondbackController
                         string exePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
                         if (enable)
                         {
-                            runKey.SetValue("RazerDiamondbackController", exePath);
+                            runKey.SetValue("RazerDiamondbackController", "\"" + exePath + "\" --tray");
                         }
                         else
                         {
